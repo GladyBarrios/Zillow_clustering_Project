@@ -100,8 +100,6 @@ def wrangle_zillow():
 
     df = data_prep(df)
 
-    df = drop_one(df)
-
     df.to_csv("zillow.csv", index=False)
 
     return df
