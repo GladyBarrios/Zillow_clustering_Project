@@ -71,12 +71,17 @@ def data_prep(df, cols_to_remove=[], prop_required_column=0.6, prop_required_row
     df = drop_r_nulls(df)
     return df
 
-
+def handle_missing_nulls(df):
+    return df.assign(
+        lotsizesquarefeet=df.lotsizesquarefeet.fillna(value='11249'),
+        taxvaluedollarcnt=df.taxvaluedollarcnt.fillna(value='528313'),
+        yearbuilt=df.yearbuilt.fillna(value='1963'),
+    )
 
 
 def get_zillow_data():
     """Seeks to read the cached zillow.csv first """
-    filename = "zillow.csv"
+    filename = "zillow2.csv"
 
     if os.path.isfile(filename):
         return pd.read_csv(filename)
@@ -87,6 +92,56 @@ def drop_one(df):
     df = df.drop(columns=['Unnamed: 0'])
     return df
     
+def fix_fips(df):
+    df['County'] = df.fips.map({6037:'Los Angeles County', 6059:'Orange County', 6111:'Ventura County'})
+    return df
+
+
+def create_features(df):
+    df['age'] = 2017 - df.yearbuilt
+    df['age_bin'] = pd.cut(df.age, 
+                           bins = [0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140],
+                           labels = [0, .066, .133, .20, .266, .333, .40, .466, .533, 
+                                     .60, .666, .733, .8, .866, .933])
+    # create acres variable
+    df['acres'] = df.lotsizesquarefeet/43560
+
+    # bin acres
+    df['acres_bin'] = pd.cut(df.acres, bins = [0, .10, .15, .25, .5, 1, 5, 10, 20, 50, 200], 
+                       labels = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9])
+    
+    # update datatypes of binned values to be float
+    df = df.astype({'acres_bin': 'float64', 'age_bin': 'float64'})
+    return df
+
+
+def get_counties(df):
+    '''
+    This function will create dummy variables out of the original fips column. 
+    And return a dataframe with all of the original columns except regionidcounty.
+    We will keep fips column for data validation after making changes. 
+    New columns added will be 'LA', 'Orange', and 'Ventura' which are boolean 
+    The fips ids are renamed to be the name of the county each represents. 
+    '''
+    # create dummy vars of fips id
+    county_df = pd.get_dummies(df.fips)
+    # rename columns by actual county name
+    county_df.columns = ['LA', 'Orange', 'Ventura']
+    # concatenate the dataframe with the 3 county columns to the original dataframe
+    df_dummies = pd.concat([df, county_df], axis = 1)
+    return df_dummies
+
+
+def remove_outliers(df):
+    '''
+    remove outliers in bed, bath, zip, square feet, acres & tax rate
+    '''
+
+    return df[((df.bathroomcnt <= 7) & (df.bedroomcnt <= 7) &  
+               (df.bathroomcnt > 0) & 
+               (df.bedroomcnt > 0) &
+               (df.acres < 20)
+              )]
 
 def wrangle_zillow():
     """
@@ -97,9 +152,6 @@ def wrangle_zillow():
     returns a clean dataframe
     """
     df = get_zillow_data()
-
-    df = data_prep(df)
-
-    df.to_csv("zillow.csv", index=False)
-
+    
+    df = drop_one(df)
     return df
